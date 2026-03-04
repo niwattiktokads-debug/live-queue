@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from "react"
 import {
   getMCs, addMC, updateMC, deleteMC,
   getBookings, addBooking, deleteBooking, clearAllBookings,
+  getAdminConfig, updateAdminConfig,
   type MC, type Booking
 } from "@/lib/supabase"
 
@@ -36,14 +37,14 @@ const dKey = (d: Date) => d.toISOString().split("T")[0]
 
 type User = { username:string; password:string; role:string; displayName:string; mcId?:number }
 
-function LoginScreen({ mcList, onLogin }: { mcList: MC[]; onLogin: (u: User) => void }) {
+function LoginScreen({ mcList, onLogin, adminConfig }: { mcList: MC[]; onLogin: (u: User) => void; adminConfig: { username: string; password: string } }) {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError]       = useState("")
 
   const handle = () => {
-    if (username.trim().toLowerCase() === ADMIN.username && password === ADMIN.password) {
-      onLogin({ ...ADMIN }); return
+    if (username.trim().toLowerCase() === adminConfig.username && password === adminConfig.password) {
+      onLogin({ username: adminConfig.username, password: adminConfig.password, role:"admin", displayName:"แอดมิน" }); return
     }
     const mc = mcList.find(m => m.username === username.trim().toLowerCase() && m.password === password)
     if (mc) { onLogin({ role:"mc", displayName:mc.name, username:mc.username, password:mc.password, mcId:mc.id }); return }
@@ -94,6 +95,8 @@ export default function App() {
   const [mcForm, setMcForm]       = useState({ name:"", size:"M", rate:"", time:"", note:"", username:"", password:"" })
   const [deleteConfirm, setDeleteConfirm] = useState<any>(null)
   const [toast, setToast]         = useState<{ msg:string; type:string } | null>(null)
+  const [adminConfig, setAdminConfig] = useState({ username:"admin", password:"admin1234" })
+  const [pwForm, setPwForm] = useState({ oldPw:"", newPw:"", confirmPw:"" })
 
   const isAdmin    = currentUser?.role === "admin"
   const weekRange  = weekDates.length ? `${fmt(weekDates[0])} - ${fmt(weekDates[6])}` : ""
@@ -104,6 +107,7 @@ export default function App() {
 
   useEffect(() => {
     getMCs().then(setMcList)
+    getAdminConfig().then(setAdminConfig)
   }, [])
 
   useEffect(() => {
@@ -180,7 +184,6 @@ export default function App() {
       const ok = await addMC({ ...mcForm, username: mcForm.username.trim().toLowerCase(), color })
       if (ok) { const updated = await getMCs(); setMcList(updated); showToast("เพิ่ม MC สำเร็จ 🎉","success") }
       else { showToast("เกิดข้อผิดพลาด กรุณาลองใหม่") }
-      else { showToast("เกิดข้อผิดพลาด ไม่สามารถเพิ่ม MC ได้") }
     }
     setShowMcModal(false)
   }
@@ -189,7 +192,20 @@ export default function App() {
     if (ok) { setMcList(prev => prev.filter(m => m.id!==id)); setDeleteConfirm(null); showToast("ลบ MC แล้ว","success") }
   }
 
-  if (!currentUser) return <LoginScreen mcList={mcList} onLogin={setCurrentUser}/>
+  const handleChangePassword = async () => {
+    if (!pwForm.oldPw) { showToast("กรุณากรอกรหัสผ่านเดิม"); return }
+    if (!pwForm.newPw) { showToast("กรุณากรอกรหัสผ่านใหม่"); return }
+    if (pwForm.newPw !== pwForm.confirmPw) { showToast("รหัสผ่านใหม่ไม่ตรงกัน"); return }
+    if (pwForm.oldPw !== adminConfig.password) { showToast("รหัสผ่านเดิมไม่ถูกต้อง"); return }
+    const ok = await updateAdminConfig("password", pwForm.newPw)
+    if (ok) {
+      setAdminConfig(prev => ({ ...prev, password: pwForm.newPw }))
+      setPwForm({ oldPw:"", newPw:"", confirmPw:"" })
+      showToast("เปลี่ยนรหัสผ่านแอดมินสำเร็จ ✅", "success")
+    } else { showToast("เกิดข้อผิดพลาด กรุณาลองใหม่") }
+  }
+
+  if (!currentUser) return <LoginScreen mcList={mcList} onLogin={setCurrentUser} adminConfig={adminConfig}/>
 
   const myBookings = isAdmin ? bookings : Object.fromEntries(Object.entries(bookings).filter(([_,b]) => b.booked_by===currentUser.displayName))
   const mainTabs   = [
@@ -202,6 +218,7 @@ export default function App() {
     { key:"mc",       label:"🎤 จัดการ MC" },
     { key:"users",    label:"👥 Login" },
     { key:"bookings", label:"📋 การจอง" },
+    { key:"password", label:"🔑 เปลี่ยนรหัส" },
   ]
 
   return (
@@ -372,6 +389,28 @@ export default function App() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {adminTab==="password" && (
+            <div>
+              <h2 style={{ margin:"0 0 16px", fontSize:15, fontWeight:700 }}>🔑 เปลี่ยนรหัสผ่านแอดมิน</h2>
+              <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:14, padding:"18px 16px", border:"1px solid rgba(255,255,255,0.06)", marginBottom:20 }}>
+                <div style={{ marginBottom:10 }}>
+                  <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.45)", marginBottom:4, display:"block" }}>รหัสผ่านเดิม</label>
+                  <input type="password" value={pwForm.oldPw} onChange={e => setPwForm(p => ({ ...p, oldPw: e.target.value }))} placeholder="รหัสผ่านปัจจุบัน" style={inp()}/>
+                </div>
+                <div style={{ marginBottom:10 }}>
+                  <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.45)", marginBottom:4, display:"block" }}>รหัสผ่านใหม่</label>
+                  <input type="password" value={pwForm.newPw} onChange={e => setPwForm(p => ({ ...p, newPw: e.target.value }))} placeholder="รหัสผ่านใหม่" style={inp()}/>
+                </div>
+                <div style={{ marginBottom:16 }}>
+                  <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.45)", marginBottom:4, display:"block" }}>ยืนยันรหัสผ่านใหม่</label>
+                  <input type="password" value={pwForm.confirmPw} onChange={e => setPwForm(p => ({ ...p, confirmPw: e.target.value }))} placeholder="ยืนยันรหัสผ่านใหม่" style={inp()}/>
+                </div>
+                <button onClick={handleChangePassword} style={{ width:"100%", padding:12, borderRadius:11, background:"linear-gradient(135deg,#8B5CF6,#EC4899)", border:"none", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>เปลี่ยนรหัสผ่าน</button>
+              </div>
+              <p style={{ fontSize:11, color:"rgba(255,255,255,0.3)", textAlign:"center" }}>Username ปัจจุบัน: <span style={{ color:"#FBBF24" }}>{adminConfig.username}</span></p>
             </div>
           )}
 

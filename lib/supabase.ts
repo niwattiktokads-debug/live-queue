@@ -77,3 +77,18 @@ export async function clearAllBookings(): Promise<boolean> {
   if (error) { console.error(error); return false }
   return true
 }
+
+// ── Admin Config ──────────────────────────────────
+export async function getAdminConfig(): Promise<{ username: string; password: string }> {
+  const { data, error } = await supabase.from('admin_config').select('*')
+  if (error || !data) return { username: 'admin', password: 'admin1234' }
+  const map: Record<string, string> = {}
+  data.forEach((row: { key: string; value: string }) => { map[row.key] = row.value })
+  return { username: map['username'] || 'admin', password: map['password'] || 'admin1234' }
+}
+
+export async function updateAdminConfig(key: string, value: string): Promise<boolean> {
+  const { error } = await supabase.from('admin_config').update({ value }).eq('key', key)
+  if (error) { console.error(error); return false }
+  return true
+}
