@@ -180,6 +180,8 @@ export default function App() {
       const color = MC_COLORS[mcList.length % MC_COLORS.length]
       const ok = await addMC({ ...mcForm, username: mcForm.username.trim().toLowerCase(), color })
       if (ok) { const updated = await getMCs(); setMcList(updated); showToast("เพิ่ม MC สำเร็จ 🎉","success") }
+      else { showToast("เกิดข้อผิดพลาด กรุณาลองใหม่") }
+      else { showToast("เกิดข้อผิดพลาด ไม่สามารถเพิ่ม MC ได้") }
     }
     setShowMcModal(false)
   }
