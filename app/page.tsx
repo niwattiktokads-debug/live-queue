@@ -66,7 +66,6 @@ function LoginScreen({ mcList, onLogin }: { mcList: MC[]; onLogin: (u: User) => 
         <button onClick={handle} style={{ width:"100%", padding:14, borderRadius:14, background:"linear-gradient(135deg,#8B5CF6,#EC4899)", border:"none", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit" }}>
           เข้าสู่ระบบ
         </button>
-        <p style={{ marginTop:16, fontSize:11, color:"rgba(255,255,255,0.25)" }}>Admin: admin / admin1234</p>
       </div>
     </div>
   )
