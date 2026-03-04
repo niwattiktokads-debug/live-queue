@@ -408,14 +408,14 @@ export default function App() {
             <h2 style={{ margin:"0 0 4px", fontSize:17, fontWeight:800, color:"#C4B5FD" }}>จองคิวไลฟ์</h2>
             <p style={{ margin:"0 0 18px", fontSize:11, color:"rgba(255,255,255,0.4)" }}>{selectedSlot && `${DAYS[selectedSlot.di]} (${fmt(weekDates[selectedSlot.di])}) • ${TIME_SLOTS[selectedSlot.si]}`}</p>
             <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.5)", marginBottom:5, display:"block" }}>ชื่อผู้จอง</label>
-            <input value={bookingName} onChange={e => setBookingName(e.target.value)} readOnly={!isAdmin} style={{ ...inp(), marginBottom:12, opacity:isAdmin?1:0.7 }}/>
+            <input value={bookingName} readOnly style={{ ...inp(), marginBottom:12, opacity:0.7, cursor:"default" }}/>
             <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.5)", marginBottom:5, display:"block" }}>เลือก MC</label>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
-              {mcList.map(mc => <button key={mc.id} onClick={() => setSelectedMC(mc.name)} style={{ padding:"6px 11px", borderRadius:8, background: selectedMC===mc.name?mc.color:"rgba(255,255,255,0.06)", border: selectedMC===mc.name?`2px solid ${mc.color}`:"1px solid rgba(255,255,255,0.08)", color: selectedMC===mc.name?"#1a1a2e":"rgba(255,255,255,0.6)", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>{mc.name}</button>)}
+              {mcList.map(mc => <button key={mc.id} onClick={() => { setSelectedMC(mc.name); setClothingSize(mc.size || ""); }} style={{ padding:"6px 11px", borderRadius:8, background: selectedMC===mc.name?mc.color:"rgba(255,255,255,0.06)", border: selectedMC===mc.name?`2px solid ${mc.color}`:"1px solid rgba(255,255,255,0.08)", color: selectedMC===mc.name?"#1a1a2e":"rgba(255,255,255,0.6)", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>{mc.name}</button>)}
             </div>
             <label style={{ fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.5)", marginBottom:5, display:"block" }}>ไซส์เสื้อผ้า</label>
-            <div style={{ display:"flex", gap:5, marginBottom:20 }}>
-              {["S","M","L","XL","2XL"].map(s => <button key={s} onClick={() => setClothingSize(s)} style={{ flex:1, padding:"7px 0", borderRadius:8, background: clothingSize===s?"linear-gradient(135deg,#8B5CF6,#7C3AED)":"rgba(255,255,255,0.06)", border:"none", color: clothingSize===s?"#fff":"rgba(255,255,255,0.45)", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>{s}</button>)}
+            <div style={{ marginBottom:20, padding:"8px 12px", borderRadius:8, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.08)", fontSize:12, color: clothingSize ? "#C4B5FD" : "rgba(255,255,255,0.3)", fontWeight:600 }}>
+              {clothingSize ? `👗 ${clothingSize}` : "— เลือก MC ก่อน —"}
             </div>
             <div style={{ display:"flex", gap:7 }}>
               <button onClick={() => setShowBookModal(false)} style={{ flex:1, padding:12, borderRadius:11, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.45)", fontWeight:600, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>ยกเลิก</button>
