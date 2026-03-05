@@ -26,16 +26,16 @@ function getWeekDates() {
   monday.setHours(0,0,0,0);
   return Array.from({ length:7 }, (_,i) => { const d=new Date(monday); d.setDate(monday.getDate()+i); return d; });
 }
-function isPastDay(date) {
+function isPastDay(date: Date): boolean {
   const today = new Date(); today.setHours(0,0,0,0);
   const d = new Date(date); d.setHours(0,0,0,0);
   return d < today;
 }
-const fmt  = d => `${d.getDate()}/${d.getMonth()+1}`;
-const dKey = d => d.toISOString().split("T")[0];
-const inp  = (ex={}) => ({ width:"100%", padding:"12px 14px", borderRadius:12, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#fff", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box", ...ex });
+const fmt  = (d: Date) => `${d.getDate()}/${d.getMonth()+1}`;
+const dKey = (d: Date) => d.toISOString().split("T")[0];
+const inp  = (ex: any = {}) => ({ width:"100%", padding:"12px 14px", borderRadius:12, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#fff", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box", ...ex });
 /* ── Login Modal ─────────────────────────────────────── */
-function LoginModal({ mcList, onLogin, onClose, message="" }) {
+function LoginModal({ mcList, onLogin, onClose, message="" }: any) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
