@@ -1,3 +1,4 @@
+"use client";
 import { useState, useCallback } from "react";
 const DAYS = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
 const DAYS_SHORT = ["จ","อ","พ","พฤ","ศ","ส","อา"];
