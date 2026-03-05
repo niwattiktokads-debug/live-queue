@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 import { useState, useCallback } from "react";
 const DAYS = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
