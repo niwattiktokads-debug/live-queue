@@ -1,6 +1,8 @@
 // @ts-nocheck
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { getMCs, addMC, updateMC, deleteMC as deleteMCfn, getBookings, addBooking, deleteBooking, clearAllBookings, getAdminConfig } from "../lib/supabase";
+
 const DAYS = ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์","เสาร์","อาทิตย์"];
 const DAYS_SHORT = ["จ","อ","พ","พฤ","ศ","ส","อา"];
 const TIME_SLOTS = [
@@ -9,15 +11,7 @@ const TIME_SLOTS = [
 ];
 const SLOT_COLORS = ["#FFE0E0","#FFF3D0","#D0F0FF","#E0FFE0","#F0E0FF","#FFE8D0","#D0FFE8","#FFD0E8"];
 const MC_COLORS   = ["#FFEAA7","#81ECEC","#A29BFE","#FF7675","#74B9FF","#55EFC4","#FDCB6E","#FD79A8"];
-const INIT_MC = [
-  { id:1, name:"คุณนิดยา",   size:"2XL", rate:"100", time:"20.00-22.00 น.", note:"(ทุกวัน) พฤ ได้ทั้งวัน", color:"#FFEAA7", username:"nidya",   password:"1234" },
-  { id:2, name:"คุณมิ้น",    size:"XL",  rate:"100", time:"13.00-18.00 น.", note:"(พฤ-อาทิตย์)",           color:"#81ECEC", username:"min",     password:"1234" },
-  { id:3, name:"คุณการ์ตูน", size:"XL",  rate:"120", time:"9.00-17.00 น.",  note:"(จ-ศ)",                  color:"#A29BFE", username:"cartoon", password:"1234" },
-  { id:4, name:"คุณแอน",     size:"S",   rate:"150", time:"9.00-18.00 น.",  note:"(ทุกวัน)",               color:"#FF7675", username:"ann",     password:"1234" },
-  { id:5, name:"คุณฟ้าใส",   size:"M",   rate:"200", time:"9.00-11.00/17.00-20.00", note:"(ทุกวัน)",       color:"#74B9FF", username:"fahsai",  password:"1234" },
-  { id:6, name:"คุณฝน",      size:"M",   rate:"250", time:"20.00-22.00 น.", note:"(ทุกวัน)",               color:"#55EFC4", username:"fon",     password:"1234" },
-];
-const ADMIN = { username:"admin", password:"admin1234", role:"admin", displayName:"แอดมิน" };
+
 function getWeekDates() {
   const today = new Date();
   const day = today.getDay();
@@ -35,13 +29,16 @@ function isPastDay(date: Date): boolean {
 const fmt  = (d: Date) => `${d.getDate()}/${d.getMonth()+1}`;
 const dKey = (d: Date) => d.toISOString().split("T")[0];
 const inp  = (ex: any = {}) => ({ width:"100%", padding:"12px 14px", borderRadius:12, background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", color:"#fff", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box", ...ex });
+
 /* ── Login Modal ─────────────────────────────────────── */
-function LoginModal({ mcList, onLogin, onClose, message="" }: any) {
+function LoginModal({ mcList, onLogin, onClose, message="", adminConfig }: any) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const handle = () => {
-    if (username.trim().toLowerCase() === ADMIN.username && password === ADMIN.password) { onLogin({ ...ADMIN }); return; }
+    if (username.trim().toLowerCase() === adminConfig.username && password === adminConfig.password) {
+      onLogin({ role:"admin", displayName:"แอดมิน" }); return;
+    }
     const mc = mcList.find(m => m.username === username.trim().toLowerCase() && m.password === password);
     if (mc) { onLogin({ role:"mc", displayName:mc.name, mcId:mc.id }); return; }
     setError("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"); setTimeout(()=>setError(""), 2500);
@@ -60,17 +57,19 @@ function LoginModal({ mcList, onLogin, onClose, message="" }: any) {
         <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Username" onKeyDown={e=>e.key==="Enter"&&handle()} style={{ ...inp(), marginBottom:10 }}/>
         <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" onKeyDown={e=>e.key==="Enter"&&handle()} style={{ ...inp(), marginBottom:18 }}/>
         <button onClick={handle} style={{ width:"100%", padding:16, borderRadius:14, background:"linear-gradient(135deg,#8B5CF6,#EC4899)", border:"none", color:"#fff", fontWeight:700, fontSize:15, cursor:"pointer", fontFamily:"inherit" }}>เข้าสู่ระบบ</button>
-        <p style={{ textAlign:"center", marginTop:12, fontSize:11, color:"rgba(255,255,255,0.25)" }}>Admin: admin / admin1234</p>
       </div>
     </div>
   );
 }
+
 /* ── Main ────────────────────────────────────────────── */
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [weekDates]   = useState(getWeekDates);
   const [bookings, setBookings]   = useState({});
-  const [mcList, setMcList]       = useState(INIT_MC);
+  const [mcList, setMcList]       = useState([]);
+  const [adminConfig, setAdminConfig] = useState({ username:"admin", password:"admin1234" });
+  const [loading, setLoading]     = useState(true);
   const [showLogin, setShowLogin] = useState(false);
   const [loginMessage, setLoginMessage] = useState("");
   const [pendingSlot, setPendingSlot]   = useState(null);
@@ -87,10 +86,24 @@ export default function App() {
   const [mcForm, setMcForm] = useState({ name:"",size:"M",rate:"",time:"",note:"",username:"",password:"" });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [toast, setToast] = useState(null);
+
   const isAdmin = currentUser?.role === "admin";
   const weekRange = weekDates.length ? `${fmt(weekDates[0])} - ${fmt(weekDates[6])}` : "";
   const currentMcData = !isAdmin && currentUser ? mcList.find(m => m.name === currentUser.displayName) : null;
+
+  /* ── Load data from Supabase ── */
+  useEffect(() => {
+    Promise.all([getMCs(), getBookings(), getAdminConfig()])
+      .then(([mcs, bks, admin]) => {
+        setMcList(mcs);
+        setBookings(bks);
+        setAdminConfig(admin);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   const showToast = useCallback((msg, type="error") => { setToast({msg,type}); setTimeout(()=>setToast(null),3000); }, []);
+
   const handleLogin = (user) => {
     setCurrentUser(user); setShowLogin(false);
     if (pendingSlot) {
@@ -100,8 +113,10 @@ export default function App() {
       setPendingSlot(null);
     }
   };
+
   const countDay  = (name, dk) => Object.entries(bookings).filter(([k,v])=>k.startsWith(dk)&&v.name===name).length;
   const countWeek = name => Object.values(bookings).filter(b=>b.name===name).length;
+
   const handleSlotClick = (di, si) => {
     const dk = dKey(weekDates[di]); const key = `${dk}_slot${si}`;
     if (bookings[key]) {
@@ -111,45 +126,87 @@ export default function App() {
     if (!currentUser) { setPendingSlot({di,si,key,dk}); setLoginMessage("กรุณาเข้าสู่ระบบเพื่อจองคิวไลฟ์ 📅"); setShowLogin(true); return; }
     setSelectedSlot({di,si,key,dk}); setBookingName(currentUser.displayName); setShowBookModal(true);
   };
-  const handleBook = () => {
+
+  const handleBook = async () => {
     if (!bookingName.trim()) { showToast("กรุณากรอกชื่อผู้จอง"); return; }
     const mcName = isAdmin ? selectedMC : currentUser.displayName;
     const mcSize = isAdmin ? clothingSize : (currentMcData?.size || "M");
     if (!mcName) { showToast("กรุณาเลือก MC"); return; }
     if (countDay(bookingName.trim(), selectedSlot.dk) >= 2) { showToast("จองได้สูงสุด 2 ครั้ง/วัน!"); return; }
     if (countWeek(bookingName.trim()) >= 14) { showToast("จองเต็มโควต้าแล้ว!"); return; }
-    setBookings(prev => ({ ...prev, [selectedSlot.key]:{ name:bookingName.trim(), mc:mcName, size:mcSize, day:DAYS[selectedSlot.di], time:TIME_SLOTS[selectedSlot.si], date:fmt(weekDates[selectedSlot.di]), bookedBy:currentUser.displayName } }));
+    const newBooking = {
+      slot_key: selectedSlot.key,
+      name: bookingName.trim(),
+      mc: mcName,
+      size: mcSize,
+      day: DAYS[selectedSlot.di],
+      time_slot: TIME_SLOTS[selectedSlot.si],
+      date: fmt(weekDates[selectedSlot.di]),
+      booked_by: currentUser.displayName,
+    };
+    const ok = await addBooking(newBooking);
+    if (!ok) { showToast("เกิดข้อผิดพลาด กรุณาลองใหม่"); return; }
+    setBookings(prev => ({ ...prev, [selectedSlot.key]: newBooking }));
     showToast("จองสำเร็จ! 🎉","success");
     setShowBookModal(false); setBookingName(""); setSelectedMC("");
   };
-  const handleCancelBooking = key => {
+
+  const handleCancelBooking = async (key) => {
     const b = bookings[key];
-    if (!isAdmin && b.bookedBy !== currentUser?.displayName) { showToast("ไม่สามารถยกเลิกของคนอื่นได้"); return; }
+    if (!isAdmin && b.booked_by !== currentUser?.displayName) { showToast("ไม่สามารถยกเลิกของคนอื่นได้"); return; }
+    await deleteBooking(key);
     setBookings(prev => { const n={...prev}; delete n[key]; return n; });
     setShowSlotDetail(null); showToast("ยกเลิกการจองแล้ว","success");
   };
+
   const openAddMc  = () => { setEditingMc(null); setMcForm({name:"",size:"M",rate:"",time:"",note:"",username:"",password:""}); setShowMcModal(true); };
   const openEditMc = mc => { setEditingMc(mc); setMcForm({name:mc.name,size:mc.size,rate:mc.rate,time:mc.time,note:mc.note,username:mc.username,password:mc.password}); setShowMcModal(true); };
-  const saveMc = () => {
+
+  const saveMc = async () => {
     if (!mcForm.name.trim()||!mcForm.username.trim()||!mcForm.password.trim()) { showToast("กรุณากรอกข้อมูลให้ครบ"); return; }
     if (!/^\d{10}$/.test(mcForm.password)) { showToast("เบอร์โทรต้องเป็นตัวเลข 10 หลักเท่านั้น"); return; }
-    if (editingMc) { setMcList(prev => prev.map(m => m.id===editingMc.id ? {...m,...mcForm} : m)); showToast("แก้ไขสำเร็จ","success"); }
-    else { setMcList(prev => [...prev, { id:Date.now(),...mcForm, color:MC_COLORS[mcList.length%MC_COLORS.length] }]); showToast("เพิ่ม MC สำเร็จ 🎉","success"); }
+    if (editingMc) {
+      const ok = await updateMC(editingMc.id, mcForm);
+      if (!ok) { showToast("เกิดข้อผิดพลาด"); return; }
+      setMcList(prev => prev.map(m => m.id===editingMc.id ? {...m,...mcForm} : m));
+      showToast("แก้ไขสำเร็จ","success");
+    } else {
+      const color = MC_COLORS[mcList.length % MC_COLORS.length];
+      const ok = await addMC({ ...mcForm, color });
+      if (!ok) { showToast("เกิดข้อผิดพลาด"); return; }
+      // reload mc list to get real id
+      const updated = await getMCs();
+      setMcList(updated);
+      showToast("เพิ่ม MC สำเร็จ 🎉","success");
+    }
     setShowMcModal(false);
   };
-  const myBookings = currentUser ? (isAdmin ? bookings : Object.fromEntries(Object.entries(bookings).filter(([_,b])=>b.bookedBy===currentUser.displayName))) : {};
+
+  const myBookings = currentUser
+    ? (isAdmin ? bookings : Object.fromEntries(Object.entries(bookings).filter(([_,b])=>b.booked_by===currentUser.displayName)))
+    : {};
+
   const navItems = [
     { key:"schedule",    icon:"📅", label:"ตาราง" },
     { key:"mc_info",     icon:"🎤", label:"MC" },
     ...(currentUser ? [{ key:"my_bookings", icon:"📋", label: isAdmin?"การจอง":"ของฉัน" }] : []),
     ...(isAdmin      ? [{ key:"admin",      icon:"⚙️", label:"หลังบ้าน" }] : []),
   ];
-  /* ── CELL SIZE ── 44px square ── */
+
   const CELL = 44;
+
+  if (loading) {
+    return (
+      <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0c0c1d,#1a1a3e,#2d1b4e)", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:16 }}>
+        <div style={{ fontSize:40 }}>📺</div>
+        <div style={{ color:"rgba(255,255,255,0.5)", fontSize:14 }}>กำลังโหลด...</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0c0c1d,#1a1a3e,#2d1b4e)", fontFamily:"'Sarabun','Noto Sans Thai',sans-serif", color:"#E8E8F0", display:"flex", justifyContent:"center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet"/>
-      {/* Phone shell */}
       <div style={{ width:"100%", maxWidth:420, minHeight:"100vh", display:"flex", flexDirection:"column", position:"relative", background:"linear-gradient(160deg,#0c0c1d,#1a1a3e,#2d1b4e)" }}>
         {/* Toast */}
         {toast && (
@@ -181,41 +238,37 @@ export default function App() {
             </div>
           )}
         </div>
+
         {/* ── CONTENT ── */}
         <div style={{ flex:1, overflowY:"auto", paddingBottom:80 }}>
+
           {/* ══ SCHEDULE ══ */}
           {viewMode==="schedule" && (
             <div style={{ padding:"14px 0 8px" }}>
-              {/* Note */}
               <div style={{ margin:"0 16px 12px", display:"flex", alignItems:"center", gap:8, padding:"9px 14px", borderRadius:12, background:"rgba(251,191,36,0.08)", border:"1px solid rgba(251,191,36,0.2)" }}>
                 <span style={{ fontSize:14 }}>📌</span>
                 <span style={{ fontSize:12, color:"#FCD34D", fontWeight:600 }}>แต่ละวันจองได้สูงสุด 2 รอบ / คน</span>
               </div>
-              {/* Grid — scrollable horizontally */}
               <div style={{ overflowX:"auto", paddingBottom:4 }}>
                 <div style={{ display:"inline-flex", flexDirection:"column", minWidth:"100%", paddingLeft:16 }}>
-                  {/* Time header */}
                   <div style={{ display:"flex", marginBottom:2 }}>
                     <div style={{ width:48, flexShrink:0 }}/>
                     {TIME_SLOTS.map((s,i) => (
                       <div key={i} style={{ width:CELL, flexShrink:0, textAlign:"center", fontSize:7, fontWeight:600, color:"rgba(255,255,255,0.35)", padding:"0 1px", lineHeight:1.3 }}>{s}</div>
                     ))}
                   </div>
-                  {/* Rows */}
                   {DAYS.map((day,di) => {
                     const past = isPastDay(weekDates[di]);
                     return (
                       <div key={day} style={{ display:"flex", marginBottom:3 }}>
-                        {/* Day label */}
                         <div style={{ width:48, flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", opacity: past?0.4:1 }}>
                           <div style={{ fontSize:11, fontWeight:700 }}>{DAYS_SHORT[di]}</div>
                           <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)" }}>{fmt(weekDates[di])}</div>
                         </div>
-                        {/* Cells */}
                         {TIME_SLOTS.map((_,si) => {
                           const key = `${dKey(weekDates[di])}_slot${si}`;
                           const b   = bookings[key];
-                          const mcColor = INIT_MC.find(m=>m.name===b?.mc)?.color;
+                          const mcColor = mcList.find(m=>m.name===b?.mc)?.color;
                           const sc  = mcColor || SLOT_COLORS[(di+si)%SLOT_COLORS.length];
                           return (
                             <div key={si} onClick={() => !past && handleSlotClick(di,si)}
@@ -240,12 +293,12 @@ export default function App() {
                   })}
                 </div>
               </div>
-              {/* Legend */}
               <div style={{ display:"flex", justifyContent:"center", gap:16, marginTop:10, fontSize:10, color:"rgba(255,255,255,0.3)" }}>
                 <span>⬜ ว่าง</span><span>🟩 จองแล้ว</span><span>🔒 ผ่านแล้ว</span>
               </div>
             </div>
           )}
+
           {/* ══ MC INFO ══ */}
           {viewMode==="mc_info" && (
             <div style={{ padding:"14px 16px" }}>
@@ -269,23 +322,22 @@ export default function App() {
               </div>
             </div>
           )}
+
           {/* ══ MY BOOKINGS ══ */}
           {viewMode==="my_bookings" && currentUser && (
             <div style={{ padding:"14px 16px" }}>
               {(() => {
                 const entries = Object.entries(myBookings);
-                // คำนวณชั่วโมงจาก time slot เช่น "9.00-11.00" = 2 ชม
                 const calcHours = (timeStr) => {
-                  const parts = timeStr.replace(/\s/g,"").split("-");
+                  const parts = (timeStr||"").replace(/\s|น\./g,"").split("-");
                   if (parts.length < 2) return 1;
                   const toNum = s => { const [h,m="0"] = s.split("."); return parseFloat(h) + parseFloat(m)/60; };
-                  return Math.max(toNum(parts[1]) - toNum(parts[0]), 0);
+                  return Math.max(toNum(parts[1]) - toNum(parts[0]), 0) || 1;
                 };
-                // ยอดรวมของแต่ละ booking
                 const totalEarning = entries.reduce((sum,[_,b]) => {
                   const mc = mcList.find(m => m.name === b.mc);
                   const rate = parseFloat(mc?.rate || "0");
-                  const hrs  = calcHours(b.time);
+                  const hrs  = calcHours(b.time_slot);
                   return sum + (rate * hrs);
                 }, 0);
                 return (
@@ -293,7 +345,6 @@ export default function App() {
                     {entries.length === 0
                       ? <div style={{ textAlign:"center", padding:48, color:"rgba(255,255,255,0.3)" }}><div style={{ fontSize:40, marginBottom:10 }}>📭</div>ยังไม่มีการจอง</div>
                       : <>
-                          {/* ยอดรวม */}
                           <div style={{ background:"linear-gradient(135deg,rgba(16,185,129,0.15),rgba(5,150,105,0.1))", border:"1px solid rgba(16,185,129,0.3)", borderRadius:16, padding:"16px 18px", marginBottom:14 }}>
                             <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)", marginBottom:4 }}>💰 ยอดรวมที่คาดว่าจะได้รับ</div>
                             <div style={{ fontSize:28, fontWeight:800, color:"#34D399", lineHeight:1 }}>
@@ -301,19 +352,18 @@ export default function App() {
                             </div>
                             <div style={{ fontSize:11, color:"rgba(255,255,255,0.35)", marginTop:6 }}>จาก {entries.length} การจอง สัปดาห์นี้</div>
                           </div>
-                          {/* รายการ */}
                           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                             {entries.map(([key,b]) => {
                               const mc   = mcList.find(m => m.name === b.mc);
                               const rate = parseFloat(mc?.rate || "0");
-                              const hrs  = calcHours(b.time);
+                              const hrs  = calcHours(b.time_slot);
                               const earn = rate * hrs;
                               return (
                                 <div key={key} style={{ background:"rgba(255,255,255,0.04)", borderRadius:14, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:12 }}>
                                   <div style={{ width:8, height:52, borderRadius:4, background:mc?.color||"#8B5CF6", flexShrink:0 }}/>
                                   <div style={{ flex:1 }}>
                                     <div style={{ fontWeight:700, fontSize:14 }}>{b.name} <span style={{ fontSize:10, padding:"2px 7px", background:"rgba(139,92,246,0.2)", borderRadius:5, color:"#C4B5FD" }}>{b.size}</span></div>
-                                    <div style={{ fontSize:12, color:"rgba(255,255,255,0.45)", marginTop:2 }}>{b.day} {b.date} • {b.time} น.</div>
+                                    <div style={{ fontSize:12, color:"rgba(255,255,255,0.45)", marginTop:2 }}>{b.day} {b.date} • {b.time_slot}</div>
                                     <div style={{ fontSize:11, color:"rgba(255,255,255,0.3)", marginTop:1 }}>🎤 {b.mc} • {hrs} ชม × {rate} บาท</div>
                                   </div>
                                   <div style={{ textAlign:"right", flexShrink:0 }}>
@@ -332,16 +382,16 @@ export default function App() {
               })()}
             </div>
           )}
+
           {/* ══ ADMIN PANEL ══ */}
           {viewMode==="admin" && isAdmin && (
             <div style={{ padding:"14px 16px" }}>
-              {/* sub tabs */}
               <div style={{ display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4 }}>
                 {[{key:"mc",label:"🎤 MC"},{key:"users",label:"👥 Login"},{key:"bookings",label:"📋 การจอง"}].map(t=>(
                   <button key={t.key} onClick={()=>setAdminTab(t.key)} style={{ padding:"9px 16px", borderRadius:20, border:adminTab===t.key?"1px solid rgba(245,158,11,0.4)":"1px solid transparent", background:adminTab===t.key?"rgba(245,158,11,0.15)":"rgba(255,255,255,0.05)", color:adminTab===t.key?"#FBBF24":"rgba(255,255,255,0.45)", fontWeight:600, fontSize:12, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>{t.label}</button>
                 ))}
               </div>
-              {/* MC tab */}
+
               {adminTab==="mc" && (
                 <div>
                   <button onClick={openAddMc} style={{ width:"100%", padding:14, borderRadius:14, background:"linear-gradient(135deg,#8B5CF6,#7C3AED)", border:"none", color:"#fff", fontWeight:700, fontSize:14, cursor:"pointer", fontFamily:"inherit", marginBottom:14 }}>➕ เพิ่ม MC ใหม่</button>
@@ -362,12 +412,12 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {/* Users tab */}
+
               {adminTab==="users" && (
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                   <div style={{ background:"rgba(245,158,11,0.08)", borderRadius:14, padding:"14px 16px", border:"1px solid rgba(245,158,11,0.2)" }}>
                     <div style={{ fontWeight:700, fontSize:14, color:"#FBBF24", marginBottom:4 }}>👑 แอดมิน</div>
-                    <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)", fontFamily:"monospace" }}>admin / admin1234</div>
+                    <div style={{ fontSize:12, color:"rgba(255,255,255,0.5)", fontFamily:"monospace" }}>{adminConfig.username} / {adminConfig.password}</div>
                   </div>
                   {mcList.map(mc=>(
                     <div key={mc.id} style={{ background:"rgba(255,255,255,0.04)", borderRadius:14, padding:"14px 16px", border:"1px solid rgba(255,255,255,0.07)", display:"flex", alignItems:"center", gap:10 }}>
@@ -380,7 +430,7 @@ export default function App() {
                   ))}
                 </div>
               )}
-              {/* Bookings tab */}
+
               {adminTab==="bookings" && (
                 <div>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
@@ -397,7 +447,7 @@ export default function App() {
                               <div style={{ width:6, height:40, borderRadius:3, background:mc?.color||"#8B5CF6", flexShrink:0 }}/>
                               <div style={{ flex:1 }}>
                                 <div style={{ fontWeight:700, fontSize:13 }}>{b.name} <span style={{ fontSize:9, padding:"2px 6px", background:"rgba(139,92,246,0.2)", borderRadius:4, color:"#C4B5FD" }}>{b.size}</span></div>
-                                <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginTop:1 }}>{b.day} {b.date} • {b.time}</div>
+                                <div style={{ fontSize:11, color:"rgba(255,255,255,0.4)", marginTop:1 }}>{b.day} {b.date} • {b.time_slot}</div>
                                 <div style={{ fontSize:10, color:"rgba(255,255,255,0.3)", marginTop:1 }}>🎤 {b.mc}</div>
                               </div>
                               <button onClick={()=>handleCancelBooking(key)} style={{ padding:"6px 12px", borderRadius:8, background:"rgba(239,68,68,0.12)", border:"1px solid rgba(239,68,68,0.25)", color:"#FCA5A5", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>ลบ</button>
@@ -411,6 +461,7 @@ export default function App() {
             </div>
           )}
         </div>
+
         {/* ── BOTTOM NAV ── */}
         <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:"rgba(10,10,28,0.95)", backdropFilter:"blur(16px)", borderTop:"1px solid rgba(255,255,255,0.07)", display:"flex", zIndex:100, paddingBottom:"env(safe-area-inset-bottom)" }}>
           {navItems.map(item => (
@@ -422,9 +473,10 @@ export default function App() {
             </button>
           ))}
         </div>
+
         {/* ══ MODALS ══ */}
-        {/* Login */}
-        {showLogin && <LoginModal mcList={mcList} onLogin={handleLogin} onClose={()=>{setShowLogin(false);setPendingSlot(null);}} message={loginMessage}/>}
+        {showLogin && <LoginModal mcList={mcList} onLogin={handleLogin} onClose={()=>{setShowLogin(false);setPendingSlot(null);}} message={loginMessage} adminConfig={adminConfig}/>}
+
         {/* Book Slot */}
         {showBookModal && (
           <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(8px)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:1000 }}
@@ -458,6 +510,7 @@ export default function App() {
             </div>
           </div>
         )}
+
         {/* Slot Detail */}
         {showSlotDetail && (
           <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(8px)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:1000 }}
@@ -465,7 +518,7 @@ export default function App() {
             <div style={{ background:"linear-gradient(160deg,#1e1e3a,#2a1a40)", borderRadius:"24px 24px 0 0", padding:"20px 20px 36px", width:"100%", maxWidth:480, border:"1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ width:40, height:4, borderRadius:2, background:"rgba(255,255,255,0.2)", margin:"0 auto 20px" }}/>
               <h2 style={{ margin:"0 0 16px", fontSize:18, fontWeight:800, color:"#C4B5FD" }}>รายละเอียดการจอง</h2>
-              {[["👤 ผู้จอง",showSlotDetail.booking.name],["🎤 MC",showSlotDetail.booking.mc],["👗 ไซส์",showSlotDetail.booking.size],["📅 วัน",`${showSlotDetail.booking.day} ${showSlotDetail.booking.date}`],["⏰ เวลา",showSlotDetail.booking.time],["🔑 โดย",showSlotDetail.booking.bookedBy]].map(([l,v])=>(
+              {[["👤 ผู้จอง",showSlotDetail.booking.name],["🎤 MC",showSlotDetail.booking.mc],["👗 ไซส์",showSlotDetail.booking.size],["📅 วัน",`${showSlotDetail.booking.day} ${showSlotDetail.booking.date}`],["⏰ เวลา",showSlotDetail.booking.time_slot],["🔑 โดย",showSlotDetail.booking.booked_by]].map(([l,v])=>(
                 <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:"1px solid rgba(255,255,255,0.05)", fontSize:14 }}>
                   <span style={{ color:"rgba(255,255,255,0.4)" }}>{l}</span><span style={{ fontWeight:700 }}>{v}</span>
                 </div>
@@ -477,6 +530,7 @@ export default function App() {
             </div>
           </div>
         )}
+
         {/* Add/Edit MC */}
         {showMcModal && (
           <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(8px)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:1000 }}
@@ -526,6 +580,7 @@ export default function App() {
             </div>
           </div>
         )}
+
         {/* Confirm Delete */}
         {deleteConfirm && (
           <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", backdropFilter:"blur(8px)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:2000 }}>
@@ -538,8 +593,18 @@ export default function App() {
               </p>
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={()=>setDeleteConfirm(null)} style={{ flex:1, padding:14, borderRadius:13, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.45)", fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>ยกเลิก</button>
-                <button onClick={()=>deleteConfirm.type==="mc"?(setMcList(p=>p.filter(m=>m.id!==deleteConfirm.id)),setDeleteConfirm(null),showToast("ลบ MC แล้ว","success")):(setBookings({}),setDeleteConfirm(null),showToast("ล้างแล้ว","success"))}
-                  style={{ flex:1, padding:14, borderRadius:13, background:"linear-gradient(135deg,#EF4444,#DC2626)", border:"none", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>ยืนยันลบ</button>
+                <button onClick={async ()=>{
+                  if (deleteConfirm.type==="mc") {
+                    await deleteMCfn(deleteConfirm.id);
+                    setMcList(p=>p.filter(m=>m.id!==deleteConfirm.id));
+                    showToast("ลบ MC แล้ว","success");
+                  } else {
+                    await clearAllBookings();
+                    setBookings({});
+                    showToast("ล้างแล้ว","success");
+                  }
+                  setDeleteConfirm(null);
+                }} style={{ flex:1, padding:14, borderRadius:13, background:"linear-gradient(135deg,#EF4444,#DC2626)", border:"none", color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>ยืนยันลบ</button>
               </div>
             </div>
           </div>
