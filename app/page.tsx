@@ -39,7 +39,7 @@ function LoginModal({ mcList, onLogin, onClose, message="", adminConfig }: any) 
     if (username.trim().toLowerCase() === adminConfig.username && password === adminConfig.password) {
       onLogin({ role:"admin", displayName:"แอดมิน" }); return;
     }
-    const mc = mcList.find(m => m.username === username.trim().toLowerCase() && m.password === password);
+    const mc = mcList.find(m => m.username.toLowerCase() === username.trim().toLowerCase() && m.password === password);
     if (mc) { onLogin({ role:"mc", displayName:mc.name, mcId:mc.id }); return; }
     setError("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"); setTimeout(()=>setError(""), 2500);
   };
